@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  decision-engine:
+    build: ./services/decision-engine
+    ports:
+      - "8080:8080"
+
+  ai-service:
+    build: ./services/ai-service
+    ports:
+      - "8000:8000"
+    depends_on:
+      - decision-engine
+    environment:
+      - DECISION_ENGINE_URL=http://decision-engine:8080
