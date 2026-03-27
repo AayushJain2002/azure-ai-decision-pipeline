@@ -1,0 +1,34 @@
+# Auto normalize text files
+* text=auto
+
+# Force LF for source code (cross-platform safe)
+*.java text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.jsx text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+
+# Shell scripts MUST be LF (or they break)
+*.sh text eol=lf
+
+# Windows scripts can use CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Maven wrapper (important)
+mvnw text eol=lf
+mvnw.cmd text eol=crlf
+
+# Prevent issues with env/config files
+*.env text eol=lf
+
+# Binary files (never modify)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
