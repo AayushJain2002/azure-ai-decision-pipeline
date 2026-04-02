@@ -2,15 +2,12 @@ package com.example.demo.controller;
 
 import com.example.demo.model.Applicant;
 import com.example.demo.service.EligibilityService;
-
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.validation.Valid;
-
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = "http://localhost:5173")
 public class EligibilityController {
 
     private final EligibilityService service;

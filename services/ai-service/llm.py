@@ -3,62 +3,60 @@ import json
 from openai import OpenAI
 
 
-# ---------------------------
-# OpenAI Client
-# ---------------------------
 def get_openai_client():
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
+        print("OPENAI_API_KEY not found. Using fallback response.")
         return None
     return OpenAI(api_key=api_key)
 
 
-# ---------------------------
-# Fallback Response
-# ---------------------------
 def fallback_response():
     return {
-        "explanation": "LLM unavailable. Using fallback response.",
+        "explanation": (
+            "The applicant was evaluated using deterministic risk rules. "
+            "The explanation service is currently unavailable, so a fallback response was used."
+        ),
         "suggestions": [
-            "Improve credit score",
+            "Improve credit profile strength",
             "Increase income stability",
-            "Maintain consistent employment"
+            "Address the listed risk factors before reapplying"
         ],
         "source": "fallback"
     }
 
 
-# ---------------------------
-# Prompt Builder (moved here)
-# ---------------------------
 def build_prompt(data: dict) -> str:
+    formatted_reasons = "\n".join(f"- {reason}" for reason in data["reasons"])
+
     return f"""
-You are a financial risk analyst.
+You are a precise financial risk explanation assistant.
 
-Given:
-- Income: {data['income']}
-- Credit Score: {data['credit_score']}
-- Employment Status: {data['employment_status']}
-- Risk Decision: {data['decision']}
-- Risk Score: {data['riskScore']}
-- Key Risk Factors: {data['reasons']}
+INPUT
+Decision: {data["decision"]}
+Risk Score: {data["riskScore"]}
+Risk Factors:
+{formatted_reasons}
 
-Return STRICT JSON:
+TASK
+1. Explain clearly why this credit decision was made.
+2. Provide exactly 3 actionable suggestions that are practical for the applicant.
+
+OUTPUT
+Return STRICT JSON only in this format:
 {{
-    "explanation": "...",
-    "suggestions": ["...", "...", "..."]
+  "explanation": "string",
+  "suggestions": ["string", "string", "string"]
 }}
 
-Rules:
-- No extra text
-- No hallucination
-- Only use given inputs
+RULES
+- No markdown
+- No extra text outside JSON
+- Explanation must directly reference the supplied risk factors
+- Suggestions must be specific, practical, and applicant-focused
 """
 
 
-# ---------------------------
-# LLM Execution
-# ---------------------------
 def generate_explanation(prompt: str):
     client = get_openai_client()
 
@@ -69,21 +67,42 @@ def generate_explanation(prompt: str):
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
-                {"role": "system", "content": "You are a precise financial assistant."},
-                {"role": "user", "content": prompt},
+                {
+                    "role": "system",
+                    "content": "You produce structured, concise, valid JSON for financial risk explanations."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
             ],
-            max_tokens=200,
+            max_tokens=250,
             temperature=0.2,
         )
 
-        raw_output = response.choices[0].message.content
+        raw_output = response.choices[0].message.content.strip()
         print("GPT RAW OUTPUT:", raw_output)
 
         try:
             parsed = json.loads(raw_output)
+
+            if not isinstance(parsed, dict):
+                print("Parsed LLM output is not an object. Using fallback.")
+                return fallback_response()
+
+            if "explanation" not in parsed or "suggestions" not in parsed:
+                print("Missing required keys. Using fallback.")
+                return fallback_response()
+
+            if not isinstance(parsed["suggestions"], list):
+                print("Suggestions is not a list. Using fallback.")
+                return fallback_response()
+
             parsed["source"] = "llm"
             return parsed
-        except:
+
+        except json.JSONDecodeError:
+            print("Failed to parse LLM JSON. Using fallback.")
             return fallback_response()
 
     except Exception as e:

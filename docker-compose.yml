@@ -1,16 +1,36 @@
-version: '3.8'
-
 services:
-  decision-engine:
+  springboot:
     build: ./services/decision-engine
     ports:
       - "8080:8080"
+    depends_on:
+      - fastapi
+    environment:
+      - AI_SERVICE_URL=http://fastapi:8000
+    networks:
+      - app-network
+    restart: always
 
-  ai-service:
+  fastapi:
     build: ./services/ai-service
+    env_file:
+      - .env
     ports:
       - "8000:8000"
+    networks:
+      - app-network
+    restart: always
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
     depends_on:
-      - decision-engine
-    environment:
-      - DECISION_ENGINE_URL=http://decision-engine:8080
+      - springboot
+    networks:
+      - app-network
+    restart: always
+
+networks:
+  app-network:
+    driver: bridge

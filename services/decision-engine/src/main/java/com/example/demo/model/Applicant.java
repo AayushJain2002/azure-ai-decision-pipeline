@@ -1,10 +1,11 @@
 package com.example.demo.model;
 
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 
 public class Applicant {
-    
-    // set limits on income, creditScore, and employment status
+
     @Min(value = 1, message = "Income must be greater than 0")
     private Integer income;
 
@@ -15,12 +16,11 @@ public class Applicant {
     @NotBlank(message = "Employment status is required")
     private String employmentStatus;
 
-    // getters and setters
     public Integer getIncome() {
         return income;
     }
 
-    public void setIncome(int income) {
+    public void setIncome(Integer income) {
         this.income = income;
     }
 
@@ -28,7 +28,7 @@ public class Applicant {
         return creditScore;
     }
 
-    public void setCreditScore(int creditScore) {
+    public void setCreditScore(Integer creditScore) {
         this.creditScore = creditScore;
     }
 
