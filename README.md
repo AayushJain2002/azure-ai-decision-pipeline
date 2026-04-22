@@ -8,6 +8,38 @@ Core Objectives
  - The system is fault-tolerant with fallback logic
  - Services are decoupled and communicate via APIs
 
+
+Start Application:
+
+docker compose up -d build (use this when starting fresh and dependencies change requirements.txt or Dockerfile, open docker app)
+docker compose up -d (only changes to code - no dependency changes)
+docker ps (verfiy containers are running [FastAPI service (port 8000), Spring Boot service (port 8080)])
+
+
+Debugging: docker compose logs -f fastapi
+Shutdown: docker compose down (closes down all containers)
+
+API Testing:
+
+Health Check: curl http://localhost:8000/health (expected: {status: "ok"})
+Metrics Endpoint: curl http://localhost:8000/metrics (app_request_total, app_error_total, app_latency_seconds basically prometheus style output)
+
+Analyze Endpoint: 
+
+curl -i -X POST http://localhost:8000/analyze \
+-H "Content-Type: application/json" \
+-d '{
+  "decision": "approve",
+  "riskScore": 0.2,
+  "reasons": ["low debt", "high income"]
+}'
+
+Verifications for Analyze Endpoint:
+
+HTTP/1.1 200 OK
+X-Request-ID header present
+JSON response with explanation + suggestions
+
 Architecture:
 Frontend (React) --> Spring Boot (Decision Engine) --> FastAPI (LLM Explanation Service) --> OpenAI API
 
@@ -57,132 +89,3 @@ Output:
   "suggestions": ["...", "..."]
 }
 
-Debugging & Troubleshooting
-This project required debugging across multiple layers of a distributed system:
-1. API Contract Mismatch
-
-Issue:
-
-FastAPI expected decision outputs instead of raw inputs
-
-Fix:
-
-Clearly defined service roles:
-Spring Boot → decision engine
-FastAPI → explanation service
-2. Service-to-Service Communication Failure
-
-Issue:
-
-explanation and suggestions returned as null
-
-Root Cause:
-
-FastAPI call failing silently in Spring Boot
-
-Fix:
-
-Added structured logging:
-request payload
-raw response
-error stack traces
-Switched to explicit JSON parsing
-3. Docker Networking Issues
-
-Issue:
-
-Used localhost inside container
-
-Fix:
-
-Updated service URL:
-http://fastapi:8000/analyze
-4. Build Pipeline Failure (Critical)
-
-Issue:
-
-Code changes not reflected in running container
-
-Root Causes:
-
-Docker layer caching
-Stale JAR artifact
-Incorrect artifact copying
-
-Fixes:
-
-Forced clean rebuild:
-docker compose down -v --rmi all
-docker builder prune -a -f
-docker compose build --no-cache
-5. Incorrect JAR Artifact
-
-Issue:
-
-Used non-executable .jar.original
-
-Error:
-
-no main manifest attribute in app.jar
-
-Fix:
-
-Use Spring Boot executable JAR containing:
-BOOT-INF/
-6. Docker Artifact Ambiguity
-
-Issue:
-
-COPY target/*.jar selected wrong artifact
-
-Fix:
-
-COPY target/demo-0.0.1-SNAPSHOT.jar app.jar
-7. JSON Type Safety
-
-Issue:
-
-Unchecked conversion using Map.class
-
-Fix:
-
-new TypeReference<Map<String, Object>>() {}
-🐳 Running the Project
-docker compose up --build
-🌐 Services
-Service	URL
-Frontend	http://localhost:3000
-
-Spring Boot API	http://localhost:8080
-
-FastAPI Docs	http://localhost:8000/docs
-📈 Future Improvements
-🔹 Prometheus metrics (latency, success rate, fallback rate)
-🔹 Grafana dashboards
-🔹 Distributed tracing across services
-🔹 Load testing & performance benchmarking
-🔹 Authentication & rate limiting
-🧠 Key Takeaways
-Separation of deterministic and AI logic is critical
-Build pipelines are often harder than application logic
-Observability is essential for production systems
-Clear API contracts prevent system-level bugs
-🎯 What This Project Demonstrates
-Full-stack system design
-Microservices communication
-AI integration with fallback safety
-Debugging across distributed systems
-Production-oriented engineering mindset
-🚀 Getting Started (Quick Commands)
-docker compose down -v --rmi all
-docker builder prune -a -f
-docker compose build --no-cache
-docker compose up
-📌 Author Notes
-
-This project emphasizes system reliability over just functionality, focusing on:
-
-correctness
-observability
-reproducibility
-clear service boundaries

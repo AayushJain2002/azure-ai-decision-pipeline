@@ -11,21 +11,32 @@ async def add_request_context(request: Request, call_next):
     request.state.request_id = request_id
 
     start_time = time.time()
-    endpoint = request.url.path 
-    REQUEST_COUNT.labels(endpoint=endpoint, status="success").inc() #only goes up until restart - tracks number of request made 
+    endpoint = request.url.path
 
     try:
         response = await call_next(request)
-        REQUEST_COUNT.labels(endpoint=endpoint, status="success").inc() #success metrics
-        response.headers["X-Request-ID"] = request_id #attaches the request id to response headers 
+
+        if response.status_code < 400:
+            REQUEST_COUNT.labels(endpoint=endpoint, status="success").inc()
+        else:
+            REQUEST_COUNT.labels(endpoint=endpoint, status="error").inc()
+            REQUEST_ERRORS.labels(endpoint=endpoint).inc()
+
+        response.headers["X-Request-ID"] = request_id
         return response
 
     except Exception:
-        REQUEST_ERRORS.labels(endpoint=endpoint).inc() #counter for number of errors per api call
+        # true runtime crash
         REQUEST_COUNT.labels(endpoint=endpoint, status="error").inc()
-        logger.error("Unhandled request error", extra={"request_id": request_id}, exc_info=True)
+        REQUEST_ERRORS.labels(endpoint=endpoint).inc()
+
+        logger.error(
+            "Unhandled request error",
+            extra={"request_id": request_id},
+            exc_info=True
+        )
         raise
 
     finally:
-        duration = time.time() - start_time 
-        REQUEST_LATENCY.labels(endpoint=endpoint).observe(duration) #gives latency between requests
+        duration = time.time() - start_time
+        REQUEST_LATENCY.labels(endpoint=endpoint).observe(duration)
