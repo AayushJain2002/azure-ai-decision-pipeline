@@ -89,3 +89,51 @@ Output:
   "suggestions": ["...", "..."]
 }
 
+Notes:
+Backend + Observability
+FastAPI + Spring Boot running via Docker
+/analyze, /health, /metrics all working
+Middleware implemented with:
+X-Request-ID tracing
+request count (success/error)
+error tracking
+latency histogram
+✅ Prometheus
+Running in Docker
+Scraping FastAPI (fastapi:8000)
+Target status: UP
+Queries verified:
+app_requests_total
+app_errors_total
+app_latency_seconds_*
+Rate queries working after generating traffic
+
+⚠️ Key Learnings (Don’t Re-Learn Tomorrow)
+Prometheus only shows metrics after traffic
+rate(...) can return 0 if no recent activity
+Docker networking requires:
+same network
+service name (not localhost)
+Metrics must:
+use correct labels
+avoid double counting
+Validation errors (422) ≠ exceptions → must be handled via status code
+🚧 What’s Next (Starting Point Tomorrow)
+🎯 Immediate Task
+
+Set up Grafana visualization layer
+
+Already decided:
+Add Grafana container to docker-compose
+Connect to Prometheus (http://prometheus:9090)
+Build 3 panels:
+Traffic (requests/sec)
+Error rate (%)
+Latency (avg)
+🔥 Final Goal for Tomorrow
+
+Have a working dashboard that:
+
+updates in real time
+shows meaningful system behavior
+can be demoed in < 1 minute
