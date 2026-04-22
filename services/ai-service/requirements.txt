@@ -16,6 +16,7 @@ jiter==0.13.0
 limits==5.8.0
 openai==2.29.0
 packaging==26.0
+prometheus_client==0.25.0
 pydantic==2.12.5
 pydantic_core==2.41.5
 python-dotenv==1.2.2
