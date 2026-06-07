@@ -3,7 +3,7 @@ package com.example.demo.model;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.util.List;
 
-@JsonPropertyOrder({ "decision", "riskScore", "reasons", "explanation", "suggestions" })
+@JsonPropertyOrder({ "decision", "riskScore", "reasons", "explanation", "suggestions", "source" })
 public class EligibilityResponse {
 
     private String decision;
@@ -11,6 +11,7 @@ public class EligibilityResponse {
     private List<String> reasons;
     private String explanation;
     private List<String> suggestions;
+    private String source;
 
     public EligibilityResponse() {
     }
@@ -63,6 +64,14 @@ public class EligibilityResponse {
         this.suggestions = suggestions;
     }
 
+    public String getSource() {
+        return source;
+    }
+
+    public void setSource(String source) {
+        this.source = source;
+    }
+
     @Override
     public String toString() {
         return "EligibilityResponse{" +
@@ -71,6 +80,7 @@ public class EligibilityResponse {
                 ", reasons=" + reasons +
                 ", explanation='" + explanation + '\'' +
                 ", suggestions=" + suggestions +
+                ", source='" + source + '\'' +
                 '}';
     }
 }

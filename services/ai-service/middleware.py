@@ -1,17 +1,24 @@
-import uuid
-import time
 import logging
+import time
+import uuid
+
 from fastapi import Request
-from metrics import REQUEST_COUNT, REQUEST_LATENCY, REQUEST_ERRORS
+
+from metrics import REQUEST_COUNT, REQUEST_ERRORS, REQUEST_LATENCY
 
 logger = logging.getLogger(__name__)
+
 
 async def add_request_context(request: Request, call_next):
     request_id = str(uuid.uuid4())
     request.state.request_id = request_id
 
-    start_time = time.time()
     endpoint = request.url.path
+
+    if endpoint == "/metrics":
+        return await call_next(request)
+
+    start_time = time.time()
 
     try:
         response = await call_next(request)
@@ -26,14 +33,13 @@ async def add_request_context(request: Request, call_next):
         return response
 
     except Exception:
-        # true runtime crash
         REQUEST_COUNT.labels(endpoint=endpoint, status="error").inc()
         REQUEST_ERRORS.labels(endpoint=endpoint).inc()
 
         logger.error(
             "Unhandled request error",
-            extra={"request_id": request_id},
-            exc_info=True
+            extra={"request_id": request_id, "endpoint": endpoint},
+            exc_info=True,
         )
         raise
 

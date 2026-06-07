@@ -10,7 +10,7 @@ services:
     networks:
       - app-network
     restart: always
-    
+    container_name: springboot
   fastapi:
     build: ./services/ai-service
     env_file:
@@ -20,6 +20,7 @@ services:
     networks:
       - app-network
     restart: always
+    container_name: fastapi
 
   frontend:
     build: ./frontend
@@ -30,6 +31,7 @@ services:
     networks:
       - app-network
     restart: always
+    container_name: frontend
 
   prometheus:
     image: prom/prometheus

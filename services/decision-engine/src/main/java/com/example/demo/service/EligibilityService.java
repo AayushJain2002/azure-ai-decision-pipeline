@@ -26,7 +26,6 @@ public class EligibilityService {
     private final String fastApiUrl = "http://fastapi:8000/analyze";
 
     public EligibilityResponse evaluate(Applicant applicant) {
-        logger.info("=== VERSION 999999 ===");
         logger.info("Evaluating applicant: {}", applicant);
 
         List<String> reasons = new ArrayList<>();
@@ -104,6 +103,7 @@ public class EligibilityService {
                 "Review the decision factors",
                 "Improve risk-related inputs where possible",
                 "Retry later if explanation service is temporarily unavailable"));
+        String source = "springboot-fallback";
 
         try {
             Map<String, Object> request = new HashMap<>();
@@ -115,12 +115,9 @@ public class EligibilityService {
             headers.setContentType(MediaType.APPLICATION_JSON);
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
-            logger.info("=== NEW VERSION OF SERVICE RUNNING ===");
-            logger.info("Calling FastAPI explanation service at {}", fastApiUrl);
 
-            logger.info(" === CALLING FASTAPI ===");
-            logger.info("URL: {}", fastApiUrl);
-            logger.info("Payload: {}", request);
+            logger.info("Calling FastAPI explanation service at {}", fastApiUrl);
+            logger.info("FastAPI request payload: {}", request);
 
             ResponseEntity<String> responseEntity = restTemplate.exchange(
                     fastApiUrl,
@@ -129,16 +126,13 @@ public class EligibilityService {
                     String.class);
 
             String rawResponse = responseEntity.getBody();
-            logger.info("=== RAW RESPONSE FROM FASTAPI ===");
-            logger.info("Raw FastAPI response: {}", rawResponse);
+            logger.info("FastAPI response received with status {}", responseEntity.getStatusCode());
 
             // Manual parsing
             if (rawResponse != null) {
                 Map<String, Object> aiResponse = objectMapper.readValue(rawResponse,
                         new TypeReference<Map<String, Object>>() {
                         });
-                logger.info("=== PARSED RESPONSE ===");
-                logger.info("Parsed Map: {}", aiResponse);
 
                 if (aiResponse.get("explanation") != null) {
                     explanation = String.valueOf(aiResponse.get("explanation"));
@@ -151,12 +145,16 @@ public class EligibilityService {
                         suggestions.add(String.valueOf(item));
                     }
                 }
+
+                if (aiResponse.get("source") != null) {
+                    source = String.valueOf(aiResponse.get("source"));
+                }
             }
 
-            logger.info("AI response received successfully");
+            logger.info("AI explanation response processed successfully");
 
         } catch (Exception e) {
-            logger.error("=== FASTAPI CALL FAILED ===", e);
+            logger.error("FastAPI explanation service call failed", e);
         }
 
         EligibilityResponse response = new EligibilityResponse();
@@ -165,8 +163,9 @@ public class EligibilityService {
         response.setReasons(reasons);
         response.setExplanation(explanation);
         response.setSuggestions(suggestions);
+        response.setSource(source);
 
-        logger.info("Final response: {}", response);
+        logger.info("Final eligibility response: {}", response);
         return response;
     }
 
@@ -180,6 +179,7 @@ public class EligibilityService {
                 "Improve the highest-risk factor first",
                 "Increase income or employment stability",
                 "Raise credit score before reapplying"));
+        response.setSource("deterministic-hard-stop");
         return response;
     }
 }

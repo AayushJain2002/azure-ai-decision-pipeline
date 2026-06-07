@@ -75,9 +75,22 @@ function App() {
     return "red";
   };
 
+  // label for explanation source
+  const getSourceLabel = (source) => {
+    if (source === "llm") return "LLM Explanation";
+    if (source === "fallback") return "FastAPI Fallback";
+    if (source === "springboot-fallback") return "Spring Boot Fallback";
+    if (source === "deterministic-hard-stop") return "Deterministic Hard-Stop";
+    return source || "Unknown";
+  };
+
   return (
     <div style={{ padding: "30px", fontFamily: "Arial" }}>
-      <h1>Check Your Risk</h1>
+      <h1>AI Decision Pipeline</h1>
+      <p>
+        Enter applicant information to generate a deterministic decision with an
+        LLM-powered explanation.
+      </p>
 
       {/* INPUT SECTION */}
       <div style={{ marginBottom: "20px" }}>
@@ -115,9 +128,9 @@ function App() {
             onChange={handleChange}
           >
             <option value="">Select status</option>
-            <option value="employed">Employed</option>
-            <option value="self-employed">Self Employed</option>
-            <option value="unemployed">Unemployed</option>
+            <option value="EMPLOYED">Employed</option>
+            <option value="SELF_EMPLOYED">Self Employed</option>
+            <option value="UNEMPLOYED">Unemployed</option>
           </select>
         </div>
 
@@ -152,14 +165,29 @@ function App() {
 
           {/* score */}
           <p>
-            <strong>Risk Score:</strong> {result.riskScore.toFixed(0)}%
+            <strong>Risk Score:</strong> {Number(result.riskScore).toFixed(0)}%
           </p>
+
+          {/* source */}
+          <div
+            style={{
+              display: "inline-block",
+              padding: "6px 10px",
+              border: "1px solid #ccc",
+              borderRadius: "999px",
+              backgroundColor: "#ffffff",
+              marginBottom: "12px",
+              fontSize: "14px",
+            }}
+          >
+            <strong>Explanation Source:</strong> {getSourceLabel(result.source)}
+          </div>
 
           {/* reasons */}
           <h3>Key Factors</h3>
           <ul style={{ listStyleType: "none", paddingLeft: "0" }}>
-            {result.reasons?.map((r, i) => (
-              <li key={i}>{r}</li>
+            {result.reasons?.map((reason, index) => (
+              <li key={index}>{reason}</li>
             ))}
           </ul>
 
@@ -170,8 +198,8 @@ function App() {
           {/* suggestions */}
           <h3>Suggestions</h3>
           <ul style={{ listStyleType: "none", paddingLeft: "0" }}>
-            {result.suggestions?.map((s, i) => (
-              <li key={i}>{s}</li>
+            {result.suggestions?.map((suggestion, index) => (
+              <li key={index}>{suggestion}</li>
             ))}
           </ul>
         </div>

@@ -1,13 +1,16 @@
-import os
 import json
+import os
+
 from openai import OpenAI
 
 
 def get_openai_client():
     api_key = os.getenv("OPENAI_API_KEY")
+
     if not api_key:
         print("OPENAI_API_KEY not found. Using fallback response.")
         return None
+
     return OpenAI(api_key=api_key)
 
 
@@ -15,12 +18,12 @@ def fallback_response():
     return {
         "explanation": (
             "The applicant was evaluated using deterministic risk rules. "
-            "The explanation service is currently unavailable, so a fallback response was used."
+            "The explanation service is currently unavailable, so a controlled fallback response was used."
         ),
         "suggestions": [
-            "Improve credit profile strength",
-            "Increase income stability",
-            "Address the listed risk factors before reapplying"
+            "Review and address the listed risk factors.",
+            "Improve credit profile strength before reapplying.",
+            "Increase income stability or reduce debt exposure."
         ],
         "source": "fallback"
     }
@@ -57,6 +60,35 @@ RULES
 """
 
 
+def validate_llm_response(parsed: dict):
+    if not isinstance(parsed, dict):
+        print("Parsed LLM output is not an object. Using fallback.")
+        return fallback_response()
+
+    if "explanation" not in parsed or "suggestions" not in parsed:
+        print("Missing required keys. Using fallback.")
+        return fallback_response()
+
+    if not isinstance(parsed["explanation"], str):
+        print("Explanation is not a string. Using fallback.")
+        return fallback_response()
+
+    if not isinstance(parsed["suggestions"], list):
+        print("Suggestions is not a list. Using fallback.")
+        return fallback_response()
+
+    if len(parsed["suggestions"]) != 3:
+        print("Suggestions list does not contain exactly 3 items. Using fallback.")
+        return fallback_response()
+
+    if not all(isinstance(item, str) for item in parsed["suggestions"]):
+        print("One or more suggestions are not strings. Using fallback.")
+        return fallback_response()
+
+    parsed["source"] = "llm"
+    return parsed
+
+
 def generate_explanation(prompt: str):
     client = get_openai_client()
 
@@ -69,12 +101,14 @@ def generate_explanation(prompt: str):
             messages=[
                 {
                     "role": "system",
-                    "content": "You produce structured, concise, valid JSON for financial risk explanations."
+                    "content": (
+                        "You produce structured, concise, valid JSON for financial risk explanations."
+                    ),
                 },
                 {
                     "role": "user",
-                    "content": prompt
-                }
+                    "content": prompt,
+                },
             ],
             max_tokens=250,
             temperature=0.2,
@@ -85,21 +119,7 @@ def generate_explanation(prompt: str):
 
         try:
             parsed = json.loads(raw_output)
-
-            if not isinstance(parsed, dict):
-                print("Parsed LLM output is not an object. Using fallback.")
-                return fallback_response()
-
-            if "explanation" not in parsed or "suggestions" not in parsed:
-                print("Missing required keys. Using fallback.")
-                return fallback_response()
-
-            if not isinstance(parsed["suggestions"], list):
-                print("Suggestions is not a list. Using fallback.")
-                return fallback_response()
-
-            parsed["source"] = "llm"
-            return parsed
+            return validate_llm_response(parsed)
 
         except json.JSONDecodeError:
             print("Failed to parse LLM JSON. Using fallback.")
