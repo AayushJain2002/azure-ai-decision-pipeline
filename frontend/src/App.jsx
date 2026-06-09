@@ -81,6 +81,40 @@ function App() {
     return "Rule-based fallback explanation";
   };
 
+  const formatFieldLabel = (field) => {
+    const labels = {
+      income: "Income",
+      creditScore: "Credit Score",
+      employmentStatus: "Employment Status",
+    };
+    return labels[field] || field;
+  };
+
+  const getErrorMessages = (err) => {
+    if (!err || typeof err !== "object") {
+      return ["Something went wrong"];
+    }
+
+    if (typeof err.error === "string") {
+      return [err.error];
+    }
+
+    if (typeof err.message === "string") {
+      return [err.message];
+    }
+
+    const fieldKeys = ["income", "creditScore", "employmentStatus"];
+    const fieldMessages = fieldKeys
+      .filter((key) => typeof err[key] === "string")
+      .map((key) => `${formatFieldLabel(key)}: ${err[key]}`);
+
+    if (fieldMessages.length > 0) {
+      return fieldMessages;
+    }
+
+    return ["Something went wrong"];
+  };
+
   return (
     <div style={{ padding: "30px", fontFamily: "Arial" }}>
       <h1>AI Decision Pipeline</h1>
@@ -230,9 +264,22 @@ function App() {
 
       {/* ERROR SECTION */}
       {error && (
-        <div style={{ color: "red", marginTop: "20px" }}>
-          <h3>Error</h3>
-          <p>{error.error || "Something went wrong"}</p>
+        <div
+          style={{
+            color: "#b00020",
+            marginTop: "20px",
+            border: "1px solid #f5c2c7",
+            borderRadius: "8px",
+            padding: "16px",
+            backgroundColor: "#fff5f5",
+          }}
+        >
+          <h3 style={{ marginTop: 0 }}>Error</h3>
+          <ul style={{ margin: 0, paddingLeft: "20px" }}>
+            {getErrorMessages(error).map((message, index) => (
+              <li key={index}>{message}</li>
+            ))}
+          </ul>
         </div>
       )}
     </div>

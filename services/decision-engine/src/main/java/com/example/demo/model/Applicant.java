@@ -2,7 +2,7 @@ package com.example.demo.model;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 public class Applicant {
 
@@ -13,8 +13,8 @@ public class Applicant {
     @Max(value = 850, message = "Credit score must be at most 850")
     private Integer creditScore;
 
-    @NotBlank(message = "Employment status is required")
-    private String employmentStatus;
+    @NotNull(message = "Employment status is required")
+    private EmploymentStatus employmentStatus;
 
     public Integer getIncome() {
         return income;
@@ -32,11 +32,11 @@ public class Applicant {
         this.creditScore = creditScore;
     }
 
-    public String getEmploymentStatus() {
+    public EmploymentStatus getEmploymentStatus() {
         return employmentStatus;
     }
 
-    public void setEmploymentStatus(String employmentStatus) {
+    public void setEmploymentStatus(EmploymentStatus employmentStatus) {
         this.employmentStatus = employmentStatus;
     }
 
@@ -45,7 +45,7 @@ public class Applicant {
         return "Applicant{" +
                 "income=" + income +
                 ", creditScore=" + creditScore +
-                ", employmentStatus='" + employmentStatus + '\'' +
+                ", employmentStatus=" + employmentStatus +
                 '}';
     }
 }

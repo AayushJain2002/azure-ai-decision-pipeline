@@ -2,6 +2,7 @@ package com.example.demo.service;
 
 import com.example.demo.model.Applicant;
 import com.example.demo.model.DecisionContext;
+import com.example.demo.model.EmploymentStatus;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,7 +25,7 @@ public final class DecisionEngine {
             return buildHardStopReject(reasonCodes, ruleFactors);
         }
 
-        if (applicant.getEmploymentStatus().equalsIgnoreCase("UNEMPLOYED")
+        if (applicant.getEmploymentStatus() == EmploymentStatus.UNEMPLOYED
                 && applicant.getIncome() < 60000) {
             reasonCodes.add("UNEMPLOYED_LOW_INCOME");
             ruleFactors.add("Unemployed with insufficient income stability");
@@ -32,7 +33,7 @@ public final class DecisionEngine {
         }
 
         if (applicant.getCreditScore() < 670
-                && applicant.getEmploymentStatus().equalsIgnoreCase("SELF_EMPLOYED")) {
+                && applicant.getEmploymentStatus() == EmploymentStatus.SELF_EMPLOYED) {
             reasonCodes.add("LOW_CREDIT_SELF_EMPLOYED");
             ruleFactors.add("Low credit combined with self-employment creates elevated risk");
             return buildHardStopReject(reasonCodes, ruleFactors);
@@ -70,9 +71,9 @@ public final class DecisionEngine {
             ruleFactors.add("Income is low (<60000)");
         }
 
-        if (applicant.getEmploymentStatus().equalsIgnoreCase("EMPLOYED")) {
+        if (applicant.getEmploymentStatus() == EmploymentStatus.EMPLOYED) {
             score += 20;
-        } else if (applicant.getEmploymentStatus().equalsIgnoreCase("SELF_EMPLOYED")) {
+        } else if (applicant.getEmploymentStatus() == EmploymentStatus.SELF_EMPLOYED) {
             score += 10;
             reasonCodes.add("SELF_EMPLOYMENT_RISK");
             ruleFactors.add("Self-employment introduces moderate risk");

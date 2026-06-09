@@ -839,23 +839,49 @@ cd services/decision-engine
 
 ## Environment Variables
 
-Create a root `.env` file for the FastAPI service. At minimum:
+### Setup
 
-```text
-OPENAI_API_KEY=your-key-here
+Copy the example file to create your local `.env` at the repository root (same directory as `docker-compose.yml`):
+
+```bash
+cp .env.example .env
 ```
 
-Optional FastAPI variables:
+Windows equivalents:
 
-| Variable | Purpose |
-| -------- | ------- |
-| `OPENAI_API_KEY` | Enables live LLM explanation and recommendations |
-| `LLM_TIMEOUT_SECONDS` | OpenAI client timeout (default `30`) |
-| `LLM_FORCE_FALLBACK` | Force rule-based fallback for demo/testing (`true` / `1` / `yes`) |
+```cmd
+copy .env.example .env
+```
 
-If the key is unavailable, the system still runs and returns rule-based fallback explanations.
+```powershell
+Copy-Item .env.example .env
+```
 
-This allows the deterministic decision pipeline to continue operating even when the external LLM dependency is unavailable.
+Then edit `.env` and set `OPENAI_API_KEY` to your key. Docker Compose loads this file for the FastAPI service via `env_file: .env`.
+
+A root [`.env.example`](.env.example) lists all supported placeholders.
+
+### Variables
+
+| Variable | Service | Purpose |
+| -------- | ------- | ------- |
+| `OPENAI_API_KEY` | FastAPI | Enables live LLM explanation and recommendations. Leave empty for demo fallback mode. |
+| `LLM_TIMEOUT_SECONDS` | FastAPI | OpenAI client timeout in seconds (default `30`) |
+| `LLM_FORCE_FALLBACK` | FastAPI | Force rule-based fallback for demo/testing (`true` / `1` / `yes`) |
+| `AI_SERVICE_URL` | Spring Boot (docker-compose) | Set to `http://fastapi:8000` in `docker-compose.yml`. The decision engine currently uses a hardcoded FastAPI URL internally. |
+
+### Missing or invalid API key
+
+If `OPENAI_API_KEY` is missing, empty, or the OpenAI call fails, the pipeline still completes:
+
+1. **FastAPI** — Skips the LLM call and returns rule-based explanation and recommendations. Response fields include `source: "fallback"` (or `partial-fallback` if one LLM step succeeded) and `llmStatus: "fallback"`.
+2. **Spring Boot** — Forwards the FastAPI response when reachable. If FastAPI is unavailable, Spring Boot builds its own fallback explanation (`source: "springboot-fallback"`, `llmStatus: "fallback"`).
+3. **Hard-stop cases** — When deterministic rules set `status: "HARD_STOP"`, Spring Boot does not call FastAPI. It returns a rule-based explanation with `source: "deterministic-hard-stop"` and `llmStatus: "fallback"`.
+4. **Frontend** — The result badge shows **Rule-based fallback explanation** whenever `llmStatus` is not `"success"`, and **LLM-generated explanation** when `llmStatus` is `"success"`.
+
+To demo fallback mode without an API key, leave `OPENAI_API_KEY` empty or set `LLM_FORCE_FALLBACK=true` in `.env`, then restart the FastAPI container.
+
+The deterministic decision (approve / review / reject) is always computed by Spring Boot and is never changed by the LLM layer.
 
 ---
 
@@ -903,6 +929,7 @@ This allows the deterministic decision pipeline to continue operating even when 
 │   ├── demo-traffic.sh
 │   └── full-demo.sh
 ├── docker-compose.yml
+├── .env.example
 └── README.md
 ```
 
