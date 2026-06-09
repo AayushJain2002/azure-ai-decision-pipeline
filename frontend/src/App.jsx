@@ -76,12 +76,9 @@ function App() {
   };
 
   // label for explanation source
-  const getSourceLabel = (source) => {
-    if (source === "llm") return "LLM Explanation";
-    if (source === "fallback") return "FastAPI Fallback";
-    if (source === "springboot-fallback") return "Spring Boot Fallback";
-    if (source === "deterministic-hard-stop") return "Deterministic Hard-Stop";
-    return source || "Unknown";
+  const getExplanationLabel = (llmStatus) => {
+    if (llmStatus === "success") return "LLM-generated explanation";
+    return "Rule-based fallback explanation";
   };
 
   return (
@@ -168,7 +165,7 @@ function App() {
             <strong>Risk Score:</strong> {Number(result.riskScore).toFixed(0)}%
           </p>
 
-          {/* source */}
+          {/* explanation type */}
           <div
             style={{
               display: "inline-block",
@@ -178,29 +175,55 @@ function App() {
               backgroundColor: "#ffffff",
               marginBottom: "12px",
               fontSize: "14px",
+              color: result.llmStatus === "fallback" ? "#666" : "#333",
             }}
           >
-            <strong>Explanation Source:</strong> {getSourceLabel(result.source)}
+            {getExplanationLabel(result.llmStatus)}
           </div>
+
+          {/* structured decision context */}
+          {result.decisionContext && (
+            <div style={{ marginBottom: "12px", fontSize: "14px" }}>
+              <p>
+                <strong>Status:</strong> {result.decisionContext.status}
+              </p>
+              {result.decisionContext.nextStepCategory && (
+                <p>
+                  <strong>Next Step:</strong>{" "}
+                  {result.decisionContext.nextStepCategory}
+                </p>
+              )}
+              {result.decisionContext.reasonCodes?.length > 0 && (
+                <p>
+                  <strong>Reason Codes:</strong>{" "}
+                  {result.decisionContext.reasonCodes.join(", ")}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* reasons */}
           <h3>Key Factors</h3>
           <ul style={{ listStyleType: "none", paddingLeft: "0" }}>
-            {result.reasons?.map((reason, index) => (
-              <li key={index}>{reason}</li>
-            ))}
+            {(result.decisionContext?.ruleFactors || result.reasons)?.map(
+              (reason, index) => (
+                <li key={index}>{reason}</li>
+              )
+            )}
           </ul>
 
           {/* explanation */}
           <h3>Explanation</h3>
           <p>{result.explanation}</p>
 
-          {/* suggestions */}
-          <h3>Suggestions</h3>
+          {/* recommendations */}
+          <h3>Recommendations</h3>
           <ul style={{ listStyleType: "none", paddingLeft: "0" }}>
-            {result.suggestions?.map((suggestion, index) => (
-              <li key={index}>{suggestion}</li>
-            ))}
+            {(result.recommendations || result.suggestions)?.map(
+              (recommendation, index) => (
+                <li key={index}>{recommendation}</li>
+              )
+            )}
           </ul>
         </div>
       )}

@@ -30,6 +30,47 @@ This is intentionally not a simple GPT wrapper. The LLM is not responsible for a
 
 ---
 
+## Recent Demo Hardening Changes
+
+This iteration focused on making the project reliable for a live technical demo and interview walkthrough.
+
+### Reasoning
+
+Three demo risks were addressed:
+
+1. **Unreliable local startup** — The Spring Boot Docker image previously required a pre-built JAR in `target/`, which is gitignored. A fresh clone could fail on `docker compose up --build` unless Maven was run manually first.
+2. **Weak decision/explanation separation** — The interview narrative depends on proving that deterministic rules make the decision and the LLM only explains it. The pipeline needed a clearer structured contract between services and stricter LLM guardrails.
+3. **Inconsistent demo experience** — Browser launch depended on the Windows default handler (opening Arc instead of Chrome), and the UI used different explanation labels than the demo script.
+
+### Process
+
+1. **Docker build reliability** — Converted `services/decision-engine/Dockerfile` to a multi-stage build that runs `./mvnw clean package -DskipTests` inside Docker and copies the JAR into a JRE runtime image.
+2. **Deterministic decision extraction** — Moved scoring and hard-stop logic into `DecisionEngine.java` and introduced `DecisionContext` as the structured decision artifact passed to the AI layer.
+3. **Constrained multi-step LLM workflow** — Updated FastAPI to accept full `DecisionContext`, run separate explanation and recommendation LLM calls, validate strict JSON for each step, and return `llmStatus` (`success` or `fallback`).
+4. **Frontend and script alignment** — Updated the result card to show `LLM-generated explanation` or `Rule-based fallback explanation`, display `decisionContext` fields, and aligned `full-demo.sh` expected output with the UI.
+5. **Demo launcher polish** — Updated `full-demo.sh` to open all demo URLs in Google Chrome when available, regardless of the OS default browser.
+
+### Resulting Changes
+
+| Area | Files | What changed |
+| ---- | ----- | ------------ |
+| Docker build | `services/decision-engine/Dockerfile` | Multi-stage Maven build; no host `mvn package` required |
+| Decision engine | `DecisionEngine.java`, `DecisionContext.java`, `EligibilityService.java`, `EligibilityResponse.java` | Structured decision context, reason codes, next-step category, `llmStatus` in API response |
+| AI explanation | `services/ai-service/main.py`, `services/ai-service/llm.py` | Two-step LLM prompts (explanation + recommendations), forbidden-field validation, rule-based fallbacks |
+| Frontend | `frontend/src/App.jsx` | Shows decision context, recommendations, and consistent explanation labels |
+| Demo script | `scripts/full-demo.sh` | Chrome-only browser launch and updated expected UI text |
+
+From a clean clone, the supported startup path is:
+
+```bash
+docker compose up -d --build
+./scripts/full-demo.sh
+```
+
+No manual Maven packaging step is required before Docker Compose.
+
+---
+
 ## Local Architecture
 
 ```text
@@ -108,16 +149,19 @@ Responsibilities:
 
 * Expose the `/api/evaluate` endpoint
 * Validate applicant input
-* Apply deterministic scoring rules
-* Apply hard-stop rejection rules
-* Produce:
+* Delegate deterministic evaluation to `DecisionEngine`
+* Apply scoring rules and hard-stop rejection rules
+* Produce a structured `DecisionContext` containing:
 
   * `decision`
-  * `riskScore`
-  * `reasons`
-* Call the FastAPI AI explanation service
+  * `status` (`EVALUATED` or `HARD_STOP`)
+  * `reasonCodes`
+  * `ruleFactors`
+  * `score`
+  * `nextStepCategory`
+* Call the FastAPI AI explanation service with the full `DecisionContext`
 * Return a combined response to the frontend
-* Provide fallback output if the FastAPI service is unavailable
+* Provide rule-based fallback output if the FastAPI service is unavailable
 
 The Spring Boot service is the decision authority. The LLM does not make the decision.
 
@@ -130,20 +174,20 @@ The FastAPI service owns the AI explanation layer.
 Responsibilities:
 
 * Expose the `/analyze` endpoint
-* Accept structured decision data from Spring Boot
-* Build a constrained prompt using:
+* Accept the full `DecisionContext` from Spring Boot
+* Run a two-step constrained LLM workflow:
 
-  * decision
-  * risk score
-  * reasons
-* Call the OpenAI API
-* Validate that the LLM response is strict JSON
+  1. Explanation prompt — explain why the decision was already made
+  2. Recommendation prompt — suggest practical next steps
+* Validate that each LLM response is strict JSON with only the allowed fields
+* Reject LLM output that attempts to return decision fields (`decision`, `status`, `reasonCodes`, etc.)
 * Return:
 
   * explanation
-  * suggestions
+  * recommendations
   * source
-* Provide fallback behavior when the LLM call fails or returns invalid output
+  * `llmStatus` (`success` or `fallback`)
+* Provide rule-based fallback behavior when the LLM call fails or returns invalid output
 
 The AI service is intentionally constrained. It receives decision context and generates an explanation, but it does not control the final decision.
 
@@ -167,6 +211,17 @@ Example output:
 
 ```json
 {
+  "decisionContext": {
+    "decision": "REVIEW",
+    "status": "EVALUATED",
+    "reasonCodes": ["CREDIT_MODERATE", "INCOME_BELOW_PREFERRED"],
+    "ruleFactors": [
+      "Credit score is in the moderate range (700-749)",
+      "Income is below preferred threshold (60000-74999)"
+    ],
+    "score": 82.0,
+    "nextStepCategory": "MANUAL_REVIEW"
+  },
   "decision": "REVIEW",
   "riskScore": 82.0,
   "reasons": [
@@ -174,8 +229,10 @@ Example output:
     "Income is below preferred threshold (60000-74999)"
   ],
   "explanation": "...",
+  "recommendations": ["...", "...", "..."],
   "suggestions": ["...", "...", "..."],
-  "source": "llm"
+  "source": "llm",
+  "llmStatus": "success"
 }
 ```
 
@@ -198,12 +255,14 @@ Example request to FastAPI:
 ```json
 {
   "decision": "REVIEW",
-  "riskScore": 72.0,
-  "reasons": [
-    "Credit score is in the moderate range",
-    "Income is below preferred threshold",
-    "Employment history is limited"
-  ]
+  "status": "EVALUATED",
+  "reasonCodes": ["CREDIT_MODERATE", "INCOME_BELOW_PREFERRED"],
+  "ruleFactors": [
+    "Credit score is in the moderate range (700-749)",
+    "Income is below preferred threshold (60000-74999)"
+  ],
+  "score": 82.0,
+  "nextStepCategory": "MANUAL_REVIEW"
 }
 ```
 
@@ -211,13 +270,20 @@ Expected response shape:
 
 ```json
 {
-  "explanation": "The decision was made because...",
-  "suggestions": [
-    "Improve credit profile strength...",
-    "Increase income stability...",
-    "Address the listed risk factors..."
+  "decision": "REVIEW",
+  "reasonCodes": ["CREDIT_MODERATE", "INCOME_BELOW_PREFERRED"],
+  "ruleFactors": [
+    "Credit score is in the moderate range (700-749)",
+    "Income is below preferred threshold (60000-74999)"
   ],
-  "source": "llm"
+  "explanation": "The decision was made because...",
+  "recommendations": [
+    "Conduct a detailed manual review...",
+    "Verify income sources...",
+    "Request additional financial documentation..."
+  ],
+  "source": "llm",
+  "llmStatus": "success"
 }
 ```
 
@@ -227,10 +293,18 @@ Possible explanation sources:
 
 | Source                    | Meaning                                                                  |
 | ------------------------- | ------------------------------------------------------------------------ |
-| `llm`                     | OpenAI successfully generated the explanation                            |
-| `fallback`                | FastAPI used fallback logic                                              |
+| `llm`                     | OpenAI successfully generated the explanation and recommendations        |
+| `partial-fallback`        | One LLM step succeeded and one fell back to rule-based output            |
+| `fallback`                | FastAPI used rule-based fallback logic for all LLM steps                 |
 | `springboot-fallback`     | Spring Boot could not reach FastAPI and used fallback output             |
 | `deterministic-hard-stop` | Spring Boot rejected the applicant through deterministic hard-stop rules |
+
+UI explanation labels:
+
+| `llmStatus` | Frontend badge |
+| ----------- | -------------- |
+| `success`   | LLM-generated explanation |
+| `fallback`  | Rule-based fallback explanation |
 
 ---
 
@@ -327,12 +401,13 @@ grafana
 
 The full demo script:
 
+* rebuilds and starts the Docker Compose stack
 * lists running containers
 * checks FastAPI health
 * tests the Spring Boot to FastAPI to LLM path
 * generates demo traffic
 * confirms Prometheus metrics exist
-* opens the frontend, Prometheus, and Grafana in the browser
+* opens the frontend, Prometheus, and Grafana in Google Chrome when available
 
 ---
 
@@ -371,17 +446,18 @@ Expected result:
 ```text
 Decision: REVIEW
 Risk Score: 82%
-Explanation Source: LLM Explanation
+Explanation source: LLM-generated explanation
 ```
 
 The result card should display:
 
 * decision
 * risk score
+* explanation type badge
+* decision context (`status`, `nextStepCategory`, `reasonCodes`)
 * key factors
 * explanation
-* suggestions
-* explanation source
+* recommendations
 
 This demonstrates the user-facing flow:
 
@@ -431,6 +507,17 @@ Expected response shape:
 
 ```json
 {
+  "decisionContext": {
+    "decision": "REVIEW",
+    "status": "EVALUATED",
+    "reasonCodes": ["CREDIT_MODERATE", "INCOME_BELOW_PREFERRED"],
+    "ruleFactors": [
+      "Credit score is in the moderate range (700-749)",
+      "Income is below preferred threshold (60000-74999)"
+    ],
+    "score": 82.0,
+    "nextStepCategory": "MANUAL_REVIEW"
+  },
   "decision": "REVIEW",
   "riskScore": 82.0,
   "reasons": [
@@ -438,8 +525,10 @@ Expected response shape:
     "Income is below preferred threshold (60000-74999)"
   ],
   "explanation": "...",
+  "recommendations": ["...", "...", "..."],
   "suggestions": ["...", "...", "..."],
-  "source": "llm"
+  "source": "llm",
+  "llmStatus": "success"
 }
 ```
 
@@ -458,12 +547,14 @@ curl -i -X POST http://localhost:8000/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "decision": "REVIEW",
-    "riskScore": 72.0,
-    "reasons": [
-      "Credit score is in the moderate range",
-      "Income is below preferred threshold",
-      "Employment history is limited"
-    ]
+    "status": "EVALUATED",
+    "reasonCodes": ["CREDIT_MODERATE", "INCOME_BELOW_PREFERRED"],
+    "ruleFactors": [
+      "Credit score is in the moderate range (700-749)",
+      "Income is below preferred threshold (60000-74999)"
+    ],
+    "score": 82.0,
+    "nextStepCategory": "MANUAL_REVIEW"
   }'
 ```
 
@@ -474,16 +565,24 @@ Expected result:
 * JSON response containing:
 
   * explanation
-  * suggestions
+  * recommendations
   * source
+  * llmStatus
 
 Example response shape:
 
 ```json
 {
+  "decision": "REVIEW",
+  "reasonCodes": ["CREDIT_MODERATE", "INCOME_BELOW_PREFERRED"],
+  "ruleFactors": [
+    "Credit score is in the moderate range (700-749)",
+    "Income is below preferred threshold (60000-74999)"
+  ],
   "explanation": "...",
-  "suggestions": ["...", "...", "..."],
-  "source": "llm"
+  "recommendations": ["...", "...", "..."],
+  "source": "llm",
+  "llmStatus": "success"
 }
 ```
 
@@ -703,26 +802,21 @@ docker compose up -d frontend
 
 ---
 
-### Rebuild Spring Boot JAR
+### Rebuild Spring Boot service
 
-The Spring Boot Docker image runs from the packaged JAR in `target/`.
+The Spring Boot Docker image uses a multi-stage build. Maven packaging runs inside Docker, so a host `target/` directory is not required.
 
-After changing Java code, rebuild the JAR first:
+After changing Java code:
+
+```bash
+docker compose up -d --build springboot
+```
+
+Optional local Maven build for IDE or troubleshooting:
 
 ```bash
 cd services/decision-engine
 ./mvnw clean package -DskipTests
-cd ../..
-docker compose up -d --build
-```
-
-If `./mvnw` is unavailable:
-
-```bash
-cd services/decision-engine
-mvn clean package -DskipTests
-cd ../..
-docker compose up -d --build
 ```
 
 ---
@@ -745,13 +839,21 @@ docker compose up -d --build
 
 ## Environment Variables
 
-The FastAPI service uses:
+Create a root `.env` file for the FastAPI service. At minimum:
 
 ```text
-OPENAI_API_KEY
+OPENAI_API_KEY=your-key-here
 ```
 
-If the key is unavailable, the system still runs and returns fallback explanations.
+Optional FastAPI variables:
+
+| Variable | Purpose |
+| -------- | ------- |
+| `OPENAI_API_KEY` | Enables live LLM explanation and recommendations |
+| `LLM_TIMEOUT_SECONDS` | OpenAI client timeout (default `30`) |
+| `LLM_FORCE_FALLBACK` | Force rule-based fallback for demo/testing (`true` / `1` / `yes`) |
+
+If the key is unavailable, the system still runs and returns rule-based fallback explanations.
 
 This allows the deterministic decision pipeline to continue operating even when the external LLM dependency is unavailable.
 
@@ -785,9 +887,11 @@ This allows the deterministic decision pipeline to continue operating even when 
 │           │   └── EligibilityController.java
 │           ├── model/
 │           │   ├── Applicant.java
+│           │   ├── DecisionContext.java
 │           │   ├── EligibilityResponse.java
 │           │   └── EmploymentStatus.java
 │           └── service/
+│               ├── DecisionEngine.java
 │               └── EligibilityService.java
 ├── observability/
 │   ├── prometheus/
@@ -798,12 +902,6 @@ This allows the deterministic decision pipeline to continue operating even when 
 ├── scripts/
 │   ├── demo-traffic.sh
 │   └── full-demo.sh
-├── infra/
-│   └── terraform/
-│       └── environments/
-│           └── dev/
-├── docs/
-│   └── images/
 ├── docker-compose.yml
 └── README.md
 ```
@@ -867,7 +965,7 @@ The Azure deployment is not currently active. It is the next productionization s
 * The LLM provider is currently OpenAI-focused
 * The project does not yet include CI/CD automation
 * The frontend UI is functional but intentionally minimal
-* The system does not yet include advanced multi-step LLM workflows
+* Spring Boot metrics are not yet exported to Prometheus
 
 ---
 
@@ -875,10 +973,6 @@ The Azure deployment is not currently active. It is the next productionization s
 
 Planned improvements:
 
-* Use Cursor to accelerate additional feature development and refactoring
-* Use Cursor to expand LLM capabilities, including multi-step explanation workflows
-* Use Cursor to support Azure component buildout and Terraform iteration
-* Use Cursor to help identify and resolve limitations in the current implementation
 * Add Azure Container Apps Terraform skeleton
 * Add Azure Container Registry integration
 * Add Azure Key Vault for secret management
@@ -891,7 +985,7 @@ Planned improvements:
 * Add stronger structured error handling
 * Add automated Grafana dashboard provisioning
 * Add additional test cases for deterministic decision outcomes
-* Add multi-chain or multi-step prompting for richer AI explanation workflows
+* Wire `AI_SERVICE_URL` in Spring Boot instead of hardcoding the FastAPI URL
 
 ---
 
@@ -912,7 +1006,7 @@ Confirm:
 * frontend opens in Chrome
 * Prometheus opens in Chrome
 * Grafana opens in Chrome
-* frontend returns `Explanation Source: LLM Explanation`
+* frontend shows `LLM-generated explanation`
 * Prometheus shows `app_requests_total`
 * Grafana dashboard shows request, error, and latency data
 
@@ -922,6 +1016,3 @@ Recommended backup screenshots:
 * `docker ps`
 * Prometheus query results
 * Grafana dashboard
-
-```
-```

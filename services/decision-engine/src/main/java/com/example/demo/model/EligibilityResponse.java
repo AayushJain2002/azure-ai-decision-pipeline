@@ -3,17 +3,38 @@ package com.example.demo.model;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.util.List;
 
-@JsonPropertyOrder({ "decision", "riskScore", "reasons", "explanation", "suggestions", "source" })
+@JsonPropertyOrder({
+        "decisionContext",
+        "decision",
+        "riskScore",
+        "reasons",
+        "explanation",
+        "recommendations",
+        "suggestions",
+        "source",
+        "llmStatus"
+})
 public class EligibilityResponse {
 
+    private DecisionContext decisionContext;
     private String decision;
     private double riskScore;
     private List<String> reasons;
     private String explanation;
+    private List<String> recommendations;
     private List<String> suggestions;
     private String source;
+    private String llmStatus;
 
     public EligibilityResponse() {
+    }
+
+    public DecisionContext getDecisionContext() {
+        return decisionContext;
+    }
+
+    public void setDecisionContext(DecisionContext decisionContext) {
+        this.decisionContext = decisionContext;
     }
 
     public EligibilityResponse(String decision, double riskScore, List<String> reasons, String explanation, List<String> suggestions) {
@@ -56,6 +77,14 @@ public class EligibilityResponse {
         this.explanation = explanation;
     }
 
+    public List<String> getRecommendations() {
+        return recommendations;
+    }
+
+    public void setRecommendations(List<String> recommendations) {
+        this.recommendations = recommendations;
+    }
+
     public List<String> getSuggestions() {
         return suggestions;
     }
@@ -72,15 +101,26 @@ public class EligibilityResponse {
         this.source = source;
     }
 
+    public String getLlmStatus() {
+        return llmStatus;
+    }
+
+    public void setLlmStatus(String llmStatus) {
+        this.llmStatus = llmStatus;
+    }
+
     @Override
     public String toString() {
         return "EligibilityResponse{" +
-                "decision='" + decision + '\'' +
+                "decisionContext=" + decisionContext +
+                ", decision='" + decision + '\'' +
                 ", riskScore=" + riskScore +
                 ", reasons=" + reasons +
                 ", explanation='" + explanation + '\'' +
+                ", recommendations=" + recommendations +
                 ", suggestions=" + suggestions +
                 ", source='" + source + '\'' +
+                ", llmStatus='" + llmStatus + '\'' +
                 '}';
     }
 }

@@ -1,9 +1,20 @@
-FROM eclipse-temurin:17-jdk-jammy
+# Build stage
+FROM eclipse-temurin:17-jdk-jammy AS build
 
 WORKDIR /app
 
-# 🔥 COPY ONLY the correct executable jar
-COPY target/demo-0.0.1-SNAPSHOT.jar app.jar
+COPY pom.xml mvnw ./
+COPY .mvn .mvn
+COPY src src
+
+RUN chmod +x mvnw && ./mvnw clean package -DskipTests -B
+
+# Runtime stage
+FROM eclipse-temurin:17-jre-jammy
+
+WORKDIR /app
+
+COPY --from=build /app/target/demo-0.0.1-SNAPSHOT.jar app.jar
 
 EXPOSE 8080
 

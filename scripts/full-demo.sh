@@ -131,25 +131,35 @@ echo "Prometheus: ${PROMETHEUS_URL}"
 echo "Grafana:    ${GRAFANA_URL}"
 echo
 
-# Windows Git Bash / WSL-safe browser launch
+# Always open demo URLs in Google Chrome when available
 if command -v powershell.exe >/dev/null 2>&1; then
-  powershell.exe -NoProfile -Command "Start-Process '${FRONTEND_URL}'" >/dev/null 2>&1
-  powershell.exe -NoProfile -Command "Start-Process '${PROMETHEUS_URL}'" >/dev/null 2>&1
-  powershell.exe -NoProfile -Command "Start-Process '${GRAFANA_URL}'" >/dev/null 2>&1
+  powershell.exe -NoProfile -Command "
+    \$paths = @(
+      \"\$env:ProgramFiles\Google\Chrome\Application\chrome.exe\",
+      \"\${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe\",
+      \"\$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe\"
+    )
+    \$chrome = \$paths | Where-Object { Test-Path \$_ } | Select-Object -First 1
+    \$urls = @('${FRONTEND_URL}', '${PROMETHEUS_URL}', '${GRAFANA_URL}')
+    if (\$chrome) {
+      Start-Process \$chrome -ArgumentList \$urls
+    } else {
+      Write-Warning 'Google Chrome not found. Falling back to the system default browser.'
+      foreach (\$url in \$urls) { Start-Process \$url }
+    }
+  " >/dev/null 2>&1
 
-# macOS
 elif command -v open >/dev/null 2>&1; then
-  open "${FRONTEND_URL}"
-  open "${PROMETHEUS_URL}"
-  open "${GRAFANA_URL}"
+  open -a "Google Chrome" "${FRONTEND_URL}" "${PROMETHEUS_URL}" "${GRAFANA_URL}"
 
-# Linux
-elif command -v xdg-open >/dev/null 2>&1; then
-  xdg-open "${FRONTEND_URL}" >/dev/null 2>&1 &
-  xdg-open "${PROMETHEUS_URL}" >/dev/null 2>&1 &
-  xdg-open "${GRAFANA_URL}" >/dev/null 2>&1 &
+elif command -v google-chrome >/dev/null 2>&1; then
+  google-chrome "${FRONTEND_URL}" "${PROMETHEUS_URL}" "${GRAFANA_URL}" >/dev/null 2>&1 &
+
+elif command -v google-chrome-stable >/dev/null 2>&1; then
+  google-chrome-stable "${FRONTEND_URL}" "${PROMETHEUS_URL}" "${GRAFANA_URL}" >/dev/null 2>&1 &
+
 else
-  echo "Could not auto-open browser. Open these manually:"
+  echo "Google Chrome not found. Open these URLs manually:"
   echo "${FRONTEND_URL}"
   echo "${PROMETHEUS_URL}"
   echo "${GRAFANA_URL}"
@@ -172,4 +182,4 @@ echo "Employment Status: EMPLOYED"
 echo
 echo "Expected UI result:"
 echo "Decision: REVIEW"
-echo "Explanation Source: LLM Explanation"
+echo "Explanation source: LLM-generated explanation"

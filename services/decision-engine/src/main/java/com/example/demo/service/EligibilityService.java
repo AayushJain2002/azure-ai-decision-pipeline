@@ -1,14 +1,15 @@
 package com.example.demo.service;
 
 import com.example.demo.model.Applicant;
+import com.example.demo.model.DecisionContext;
 import com.example.demo.model.EligibilityResponse;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.core.type.TypeReference;
 
 import java.util.*;
 
@@ -20,166 +21,149 @@ public class EligibilityService {
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // private final String fastApiUrl =
-    // System.getenv().getOrDefault("AI_SERVICE_URL", "http://fastapi:8000") +
-    // "/analyze";
     private final String fastApiUrl = "http://fastapi:8000/analyze";
 
     public EligibilityResponse evaluate(Applicant applicant) {
         logger.info("Evaluating applicant: {}", applicant);
 
-        List<String> reasons = new ArrayList<>();
+        DecisionContext decisionContext = DecisionEngine.evaluate(applicant);
+        logger.info("Deterministic decision produced: {}", decisionContext);
 
-        if (applicant.getCreditScore() < 600) {
-            reasons.add("Credit score is critically low (<600)");
-            return buildReject(reasons);
-        }
-
-        if (applicant.getEmploymentStatus().equalsIgnoreCase("UNEMPLOYED")
-                && applicant.getIncome() < 60000) {
-            reasons.add("Unemployed with insufficient income stability");
-            return buildReject(reasons);
-        }
-
-        if (applicant.getCreditScore() < 670
-                && applicant.getEmploymentStatus().equalsIgnoreCase("SELF_EMPLOYED")) {
-            reasons.add("Low credit combined with self-employment creates elevated risk");
-            return buildReject(reasons);
-        }
-
-        double score = 0;
-
-        if (applicant.getCreditScore() >= 750) {
-            score += 50;
-        } else if (applicant.getCreditScore() >= 700) {
-            score += 40;
-            reasons.add("Credit score is in the moderate range (700-749)");
-        } else if (applicant.getCreditScore() >= 650) {
-            score += 30;
-            reasons.add("Credit score is below preferred threshold (650-699)");
-        } else {
-            score += 20;
-            reasons.add("Credit score is low (<650)");
-        }
-
-        if (applicant.getIncome() >= 90000) {
-            score += 30;
-        } else if (applicant.getIncome() >= 75000) {
-            score += 27;
-        } else if (applicant.getIncome() >= 60000) {
-            score += 22;
-            reasons.add("Income is below preferred threshold (60000-74999)");
-        } else {
-            score += 12;
-            reasons.add("Income is low (<60000)");
-        }
-
-        if (applicant.getEmploymentStatus().equalsIgnoreCase("EMPLOYED")) {
-            score += 20;
-        } else if (applicant.getEmploymentStatus().equalsIgnoreCase("SELF_EMPLOYED")) {
-            score += 10;
-            reasons.add("Self-employment introduces moderate risk");
-        } else {
-            reasons.add("Unemployment is high risk");
-        }
-
-        double riskScore = Math.round(score * 100.0) / 100.0;
-
-        String decision;
-        if (riskScore >= 85) {
-            decision = "APPROVE";
-        } else if (riskScore >= 65) {
-            decision = "REVIEW";
-        } else {
-            decision = "REJECT";
-        }
-
-        if (reasons.isEmpty()) {
-            reasons.add("Strong performance across all evaluation factors");
-        }
-
-        String explanation = "Explanation service unavailable.";
-        List<String> suggestions = new ArrayList<>(List.of(
-                "Review the decision factors",
-                "Improve risk-related inputs where possible",
-                "Retry later if explanation service is temporarily unavailable"));
+        String explanation = buildFallbackExplanation(decisionContext);
+        List<String> suggestions = buildFallbackRecommendations(decisionContext);
         String source = "springboot-fallback";
+        String llmStatus = "fallback";
 
-        try {
-            Map<String, Object> request = new HashMap<>();
-            request.put("decision", decision);
-            request.put("riskScore", riskScore);
-            request.put("reasons", reasons);
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-
-            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
-
-            logger.info("Calling FastAPI explanation service at {}", fastApiUrl);
-            logger.info("FastAPI request payload: {}", request);
-
-            ResponseEntity<String> responseEntity = restTemplate.exchange(
-                    fastApiUrl,
-                    HttpMethod.POST,
-                    entity,
-                    String.class);
-
-            String rawResponse = responseEntity.getBody();
-            logger.info("FastAPI response received with status {}", responseEntity.getStatusCode());
-
-            // Manual parsing
-            if (rawResponse != null) {
-                Map<String, Object> aiResponse = objectMapper.readValue(rawResponse,
+        if (!"HARD_STOP".equals(decisionContext.getStatus())) {
+            try {
+                Map<String, Object> request = objectMapper.convertValue(
+                        decisionContext,
                         new TypeReference<Map<String, Object>>() {
                         });
 
-                if (aiResponse.get("explanation") != null) {
-                    explanation = String.valueOf(aiResponse.get("explanation"));
-                }
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
 
-                Object suggestionsObj = aiResponse.get("suggestions");
-                if (suggestionsObj instanceof List<?>) {
-                    suggestions = new ArrayList<>();
-                    for (Object item : (List<?>) suggestionsObj) {
-                        suggestions.add(String.valueOf(item));
+                HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
+
+                logger.info("Calling FastAPI explanation service at {}", fastApiUrl);
+                logger.info("FastAPI request payload: {}", request);
+
+                ResponseEntity<String> responseEntity = restTemplate.exchange(
+                        fastApiUrl,
+                        HttpMethod.POST,
+                        entity,
+                        String.class);
+
+                String rawResponse = responseEntity.getBody();
+                logger.info("FastAPI response received with status {}", responseEntity.getStatusCode());
+
+                if (rawResponse != null) {
+                    Map<String, Object> aiResponse = objectMapper.readValue(rawResponse,
+                            new TypeReference<Map<String, Object>>() {
+                            });
+
+                    if (aiResponse.get("explanation") != null) {
+                        explanation = String.valueOf(aiResponse.get("explanation"));
+                    }
+
+                    Object recommendationsObj = aiResponse.get("recommendations");
+                    if (recommendationsObj == null) {
+                        recommendationsObj = aiResponse.get("suggestions");
+                    }
+                    if (recommendationsObj instanceof List<?>) {
+                        suggestions = new ArrayList<>();
+                        for (Object item : (List<?>) recommendationsObj) {
+                            suggestions.add(String.valueOf(item));
+                        }
+                    }
+
+                    if (aiResponse.get("source") != null) {
+                        source = String.valueOf(aiResponse.get("source"));
+                    }
+
+                    if (aiResponse.get("llmStatus") != null) {
+                        llmStatus = String.valueOf(aiResponse.get("llmStatus"));
+                    } else if ("llm".equals(source)) {
+                        llmStatus = "success";
+                    } else {
+                        llmStatus = "fallback";
                     }
                 }
 
-                if (aiResponse.get("source") != null) {
-                    source = String.valueOf(aiResponse.get("source"));
+                if ("fallback".equals(llmStatus)) {
+                    logger.warn(
+                            "AI explanation service returned fallback output (source={})",
+                            source);
+                } else {
+                    logger.info("AI explanation response processed successfully");
                 }
+
+            } catch (Exception e) {
+                logger.error(
+                        "FastAPI explanation service call failed ({}): {}",
+                        e.getClass().getSimpleName(),
+                        e.getMessage());
             }
-
-            logger.info("AI explanation response processed successfully");
-
-        } catch (Exception e) {
-            logger.error("FastAPI explanation service call failed", e);
+        } else {
+            explanation = buildFallbackExplanation(decisionContext);
+            suggestions = buildFallbackRecommendations(decisionContext);
+            source = "deterministic-hard-stop";
+            llmStatus = "fallback";
         }
 
         EligibilityResponse response = new EligibilityResponse();
-        response.setDecision(decision);
-        response.setRiskScore(riskScore);
-        response.setReasons(reasons);
+        response.setDecisionContext(decisionContext);
+        response.setDecision(decisionContext.getDecision());
+        response.setRiskScore(decisionContext.getScore() != null ? decisionContext.getScore() : 0.0);
+        response.setReasons(decisionContext.getRuleFactors());
         response.setExplanation(explanation);
+        response.setRecommendations(suggestions);
         response.setSuggestions(suggestions);
         response.setSource(source);
+        response.setLlmStatus(llmStatus);
 
-        logger.info("Final eligibility response: {}", response);
+        logger.info("Final eligibility response: decision={}, llmStatus={}", response.getDecision(), llmStatus);
         return response;
     }
 
-    private EligibilityResponse buildReject(List<String> reasons) {
-        EligibilityResponse response = new EligibilityResponse();
-        response.setDecision("REJECT");
-        response.setRiskScore(50.0);
-        response.setReasons(reasons);
-        response.setExplanation("The application was rejected based on deterministic hard-stop rules.");
-        response.setSuggestions(List.of(
-                "Improve the highest-risk factor first",
-                "Increase income or employment stability",
-                "Raise credit score before reapplying"));
-        response.setSource("deterministic-hard-stop");
-        return response;
+    private String buildFallbackExplanation(DecisionContext decisionContext) {
+        String decision = decisionContext.getDecision() != null ? decisionContext.getDecision() : "UNKNOWN";
+        List<String> ruleFactors = decisionContext.getRuleFactors();
+        List<String> reasonCodes = decisionContext.getReasonCodes();
+
+        String factorSummary;
+        if (ruleFactors != null && !ruleFactors.isEmpty()) {
+            factorSummary = String.join("; ", ruleFactors);
+        } else if (reasonCodes != null && !reasonCodes.isEmpty()) {
+            factorSummary = String.join(", ", reasonCodes);
+        } else {
+            factorSummary = "the applicable deterministic rules";
+        }
+
+        return String.format(
+                "The system made this decision (%s) based on the following rule factors: %s.",
+                decision,
+                factorSummary);
+    }
+
+    private List<String> buildFallbackRecommendations(DecisionContext decisionContext) {
+        List<String> recommendations = new ArrayList<>();
+        List<String> missingFields = decisionContext.getMissingFields();
+        List<String> reasonCodes = decisionContext.getReasonCodes();
+
+        if (missingFields != null && !missingFields.isEmpty()) {
+            recommendations.add("Provide the missing fields: " + String.join(", ", missingFields) + ".");
+        }
+
+        if (reasonCodes != null && !reasonCodes.isEmpty()) {
+            recommendations.add(
+                    "Address the failed criteria flagged as: " + String.join(", ", reasonCodes) + ".");
+        }
+
+        recommendations.add("Improve credit profile strength before reapplying.");
+        recommendations.add("Increase income stability or reduce debt exposure.");
+
+        return recommendations.subList(0, Math.min(3, recommendations.size()));
     }
 }

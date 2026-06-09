@@ -1,11 +1,11 @@
 import logging
-from typing import List
+from typing import List, Optional
 
 from fastapi import FastAPI, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 
-from llm import build_prompt, generate_explanation
+from llm import generate_ai_output
 from logging_config import setup_logging
 from middleware import add_request_context
 
@@ -18,16 +18,24 @@ app = FastAPI(title="AI Explanation Service")
 app.middleware("http")(add_request_context)
 
 
-class AnalyzeRequest(BaseModel):
+class DecisionContext(BaseModel):
     decision: str
-    riskScore: float
-    reasons: List[str]
+    status: str
+    reasonCodes: List[str]
+    ruleFactors: List[str]
+    score: Optional[float] = None
+    missingFields: Optional[List[str]] = None
+    nextStepCategory: Optional[str] = None
 
 
 class AnalyzeResponse(BaseModel):
+    decision: str
+    reasonCodes: List[str]
+    ruleFactors: List[str]
     explanation: str
-    suggestions: List[str]
+    recommendations: List[str]
     source: str
+    llmStatus: str
 
 
 @app.get("/")
@@ -46,33 +54,40 @@ def metrics():
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
-def analyze(payload: AnalyzeRequest, request: Request):
+def analyze(payload: DecisionContext, request: Request):
     request_id = request.state.request_id
 
-    data = {
-        "decision": payload.decision,
-        "riskScore": payload.riskScore,
-        "reasons": payload.reasons,
-    }
+    data = payload.model_dump(exclude_none=True)
 
     logger.info(
         "Analyze request received",
         extra={"request_id": request_id, "input": data},
     )
 
-    prompt = build_prompt(data)
-    result = generate_explanation(prompt)
+    result = generate_ai_output(data)
+
+    llm_status = result.get("llmStatus", "fallback")
+    if llm_status == "fallback":
+        logger.warning(
+            "Returning rule-based fallback explanation",
+            extra={"request_id": request_id, "source": result.get("source", "unknown")},
+        )
 
     response = {
+        "decision": result.get("decision", data.get("decision", "UNKNOWN")),
+        "reasonCodes": result.get("reasonCodes", data.get("reasonCodes", [])),
+        "ruleFactors": result.get("ruleFactors", data.get("ruleFactors", [])),
         "explanation": result.get(
             "explanation",
-            "Unable to generate explanation at this time.",
+            "The system made this decision based on the following rule factors: "
+            "the applicable deterministic rules.",
         ),
-        "suggestions": result.get(
-            "suggestions",
-            ["Retry later", "Review the risk factors provided"],
+        "recommendations": result.get(
+            "recommendations",
+            ["Retry later", "Review the failed criteria", "Contact support if needed"],
         ),
         "source": result.get("source", "unknown"),
+        "llmStatus": llm_status,
     }
 
     logger.info(
