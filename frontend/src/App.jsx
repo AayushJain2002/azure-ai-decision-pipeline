@@ -75,10 +75,22 @@ function App() {
     return "red";
   };
 
-  // label for explanation source
-  const getExplanationLabel = (llmStatus) => {
-    if (llmStatus === "success") return "LLM-generated explanation";
-    return "Rule-based fallback explanation";
+  // badge text tied to backend source (llmStatus as fallback)
+  const getExplanationSourceText = (source, llmStatus) => {
+    if (source === "llm") {
+      return "Explanation Source: LLM";
+    }
+    if (source) {
+      return `Explanation Source: ${source}`;
+    }
+    if (llmStatus === "success") {
+      return "Explanation Source: LLM";
+    }
+    return "Explanation Source: fallback";
+  };
+
+  const isLlmExplanation = (source, llmStatus) => {
+    return source === "llm" || (!source && llmStatus === "success");
   };
 
   const formatFieldLabel = (field) => {
@@ -199,7 +211,7 @@ function App() {
             <strong>Risk Score:</strong> {Number(result.riskScore).toFixed(0)}%
           </p>
 
-          {/* explanation type */}
+          {/* explanation source */}
           <div
             style={{
               display: "inline-block",
@@ -209,10 +221,12 @@ function App() {
               backgroundColor: "#ffffff",
               marginBottom: "12px",
               fontSize: "14px",
-              color: result.llmStatus === "fallback" ? "#666" : "#333",
+              color: isLlmExplanation(result.source, result.llmStatus)
+                ? "#333"
+                : "#666",
             }}
           >
-            {getExplanationLabel(result.llmStatus)}
+            {getExplanationSourceText(result.source, result.llmStatus)}
           </div>
 
           {/* structured decision context */}
