@@ -5,12 +5,114 @@ FRONTEND_URL="http://localhost:3000"
 PROMETHEUS_URL="http://localhost:9090"
 GRAFANA_URL="http://localhost:3001"
 
+DOCKER_READY_TIMEOUT_SECONDS="${DOCKER_READY_TIMEOUT_SECONDS:-120}"
+DOCKER_READY_POLL_SECONDS="${DOCKER_READY_POLL_SECONDS:-2}"
+
+docker_is_ready() {
+  docker info >/dev/null 2>&1
+}
+
+wait_for_docker() {
+  local elapsed=0
+
+  while ! docker_is_ready; do
+    if (( elapsed >= DOCKER_READY_TIMEOUT_SECONDS )); then
+      echo "ERROR: Docker did not become ready within ${DOCKER_READY_TIMEOUT_SECONDS}s"
+      echo "Start Docker Desktop manually, then re-run this script."
+      exit 1
+    fi
+
+    echo "Waiting for Docker to be ready... (${elapsed}s / ${DOCKER_READY_TIMEOUT_SECONDS}s)"
+    sleep "${DOCKER_READY_POLL_SECONDS}"
+    elapsed=$((elapsed + DOCKER_READY_POLL_SECONDS))
+  done
+}
+
+start_docker_desktop() {
+  if command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command "
+      \$dockerDesktop = Join-Path \$env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'
+      if (Test-Path \$dockerDesktop) {
+        Start-Process \$dockerDesktop | Out-Null
+        exit 0
+      }
+      exit 1
+    "
+
+    if [[ $? -eq 0 ]]; then
+      return 0
+    fi
+
+    echo "ERROR: Docker Desktop was not found at the default install path."
+    echo "Install Docker Desktop or start it manually, then re-run this script."
+    exit 1
+  fi
+
+  if command -v open >/dev/null 2>&1; then
+    open -a Docker >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  echo "ERROR: Docker is not running and could not be started automatically on this platform."
+  echo "Start Docker manually, then re-run this script."
+  exit 1
+}
+
+ensure_docker_ready() {
+  if docker_is_ready; then
+    echo "OK: Docker is running"
+    return 0
+  fi
+
+  echo "Docker is not running. Starting Docker Desktop..."
+  start_docker_desktop
+  wait_for_docker
+  echo "OK: Docker is ready"
+}
+
+parse_json_field() {
+  local json="$1"
+  local field="$2"
+
+  echo "${json}" | python -c "import sys, json; data=json.load(sys.stdin); value=data.get('${field}'); print('' if value is None else value)" 2>/dev/null || true
+}
+
+describe_explanation_result() {
+  local source="$1"
+  local llm_status="$2"
+
+  if [[ "${source}" == "deterministic-hard-stop" ]]; then
+    echo "Deterministic hard-stop bypassed the LLM; rule-based fallback explanation was used."
+  elif [[ "${source}" == "springboot-fallback" ]]; then
+    echo "Deterministic decision succeeded; Spring Boot fallback explanation was used (FastAPI unavailable)."
+  elif [[ "${source}" == "llm" && "${llm_status}" == "success" ]]; then
+    echo "LLM-generated explanation (source=llm, llmStatus=success)."
+  elif [[ "${source}" == "partial-fallback" ]]; then
+    echo "Deterministic decision succeeded; partial LLM fallback explanation was used (source=partial-fallback)."
+  elif [[ "${source}" == "fallback" || "${llm_status}" == "fallback" ]]; then
+    echo "Deterministic decision succeeded; rule-based fallback explanation was used (source=${source})."
+  else
+    echo "Deterministic decision succeeded; explanation source=${source:-unknown}, llmStatus=${llm_status:-unknown}."
+  fi
+}
+
+describe_ui_badge() {
+  local llm_status="$1"
+
+  if [[ "${llm_status}" == "success" ]]; then
+    echo "LLM-generated explanation"
+  else
+    echo "Rule-based fallback explanation"
+  fi
+}
+
 echo "======================================"
 echo "Azure AI Decision Pipeline Demo Startup"
 echo "======================================"
 echo
 
-echo "0. Rebuilding and starting Docker Compose stack..."
+echo "0. Ensuring Docker is ready, then rebuilding and starting Docker Compose stack..."
+ensure_docker_ready
 docker compose down
 docker compose up -d --build
 echo
@@ -71,6 +173,9 @@ echo
 
 if [[ "${SPRINGBOOT_RESPONSE}" == *'"decision"'* && "${SPRINGBOOT_RESPONSE}" == *'"source"'* ]]; then
   echo "OK: Spring Boot end-to-end evaluation returned decision and source"
+  E2E_DECISION="$(parse_json_field "${SPRINGBOOT_RESPONSE}" "decision")"
+  E2E_SOURCE="$(parse_json_field "${SPRINGBOOT_RESPONSE}" "source")"
+  E2E_LLM_STATUS="$(parse_json_field "${SPRINGBOOT_RESPONSE}" "llmStatus")"
 else
   echo "ERROR: Spring Boot end-to-end evaluation did not return expected fields"
   echo
@@ -180,6 +285,7 @@ echo "Income: 65000"
 echo "Credit Score: 705"
 echo "Employment Status: EMPLOYED"
 echo
-echo "Expected UI result:"
-echo "Decision: REVIEW"
-echo "Explanation source: LLM-generated explanation"
+echo "End-to-end test result:"
+echo "Decision: ${E2E_DECISION:-REVIEW}"
+echo "Explanation: $(describe_explanation_result "${E2E_SOURCE:-unknown}" "${E2E_LLM_STATUS:-unknown}")"
+echo "UI badge: $(describe_ui_badge "${E2E_LLM_STATUS:-fallback}")"

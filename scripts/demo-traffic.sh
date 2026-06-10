@@ -6,44 +6,65 @@ curl -s http://localhost:8000/health
 echo
 echo
 
-echo "Successful analyze request..."
+echo "Successful analyze request (REVIEW)..."
 curl -i -X POST http://localhost:8000/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "decision": "REVIEW",
-    "riskScore": 72.0,
-    "reasons": [
-      "Credit score is in the moderate range",
-      "Income is below preferred threshold",
-      "Employment history is limited"
-    ]
+    "status": "EVALUATED",
+    "reasonCodes": ["CREDIT_MODERATE", "INCOME_BELOW_PREFERRED"],
+    "ruleFactors": [
+      "Credit score is in the moderate range (700-749)",
+      "Income is below preferred threshold (60000-74999)"
+    ],
+    "score": 82.0,
+    "nextStepCategory": "MANUAL_REVIEW"
   }'
 echo
 echo
 
-echo "Generate repeated analyze traffic..."
-for i in {1..10}; do
-  curl -s -X POST http://localhost:8000/analyze \
+echo "Successful analyze request (APPROVE, varied case)..."
+curl -s -o /dev/null -w "APPROVE analyze status: %{http_code}\n" \
+  -X POST http://localhost:8000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "decision": "APPROVE",
+    "status": "EVALUATED",
+    "reasonCodes": ["STRONG_FACTORS"],
+    "ruleFactors": [
+      "Strong performance across all evaluation factors"
+    ],
+    "score": 100.0,
+    "nextStepCategory": "PROCEED"
+  }'
+echo
+
+echo "Generate repeated successful analyze traffic..."
+for i in {1..5}; do
+  curl -s -o /dev/null -w "  request ${i}/5 status: %{http_code}\n" \
+    -X POST http://localhost:8000/analyze \
     -H "Content-Type: application/json" \
     -d '{
       "decision": "APPROVE",
-      "riskScore": 22.5,
-      "reasons": [
-        "Strong credit score",
-        "Stable income",
-        "Low debt-to-income ratio"
-      ]
-    }' > /dev/null
+      "status": "EVALUATED",
+      "reasonCodes": ["STRONG_FACTORS"],
+      "ruleFactors": [
+        "Strong performance across all evaluation factors"
+      ],
+      "score": 100.0,
+      "nextStepCategory": "PROCEED"
+    }'
 done
+echo
 
-echo "Generate validation error traffic..."
-curl -s -o /dev/null -w "Validation error status: %{http_code}\n" \
+echo "Labeled validation error (missing required status field)..."
+curl -s -o /dev/null -w "Labeled validation error status: %{http_code}\n" \
   -X POST http://localhost:8000/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "decision": "REVIEW",
-    "riskScore": "bad-number",
-    "reasons": ["invalid payload test"]
+    "reasonCodes": ["CREDIT_MODERATE"],
+    "ruleFactors": ["Missing status field for demo validation test"]
   }'
 
 echo

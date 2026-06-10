@@ -10,11 +10,21 @@ This is an AI-assisted decision support system where Spring Boot makes determini
 
 ### 1. Environment file
 
+Create `.env` before your first `docker compose up`. The FastAPI service loads it via `env_file: .env` in `docker-compose.yml`.
+
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Add your OpenAI key if you have one:
+**How `.env` affects startup and LLM behavior:**
+
+| Situation | Effect |
+| --------- | ------ |
+| **Missing `.env` file** | Compose may fail to start (the referenced `env_file` is absent). Copy `.env.example` to `.env` first. |
+| **`.env` present, `OPENAI_API_KEY` empty or unset** | Stack can start. FastAPI uses rule-based fallback (`source: "fallback"`, `llmStatus: "fallback"`). Deterministic decisions still work. |
+| **`.env` present, valid `OPENAI_API_KEY`** | Stack starts. FastAPI can call OpenAI for explanations when the LLM path succeeds (`source: "llm"`, `llmStatus: "success"`). |
+
+Add your OpenAI key for the LLM explanation path:
 
 ```text
 OPENAI_API_KEY=sk-...
@@ -101,8 +111,8 @@ Use the frontend at http://localhost:3000 or the `curl` commands below.
 
 **Expected source**
 
-- With `OPENAI_API_KEY` set: `source: "llm"`, `llmStatus: "success"` → UI badge: **LLM-generated explanation**
-- Without key or on LLM failure: `source: "fallback"`, `llmStatus: "fallback"` → UI badge: **Rule-based fallback explanation**
+- With valid `OPENAI_API_KEY` in `.env`: `source: "llm"`, `llmStatus: "success"` → UI badge: **LLM-generated explanation**
+- With `.env` present but key empty, or on LLM failure: `source: "fallback"`, `llmStatus: "fallback"` → UI badge: **Rule-based fallback explanation**
 
 **What it proves**
 
@@ -215,7 +225,7 @@ curl -s -X POST http://localhost:8080/api/evaluate \
 
 ### When OpenAI is unavailable
 
-FastAPI falls back to rule-based text when:
+FastAPI falls back to rule-based text when `.env` exists but:
 
 - `OPENAI_API_KEY` is missing or empty
 - `LLM_FORCE_FALLBACK=true`
@@ -286,14 +296,15 @@ Shows FastAPI request volume, errors, status distribution, and latency. Spring B
 | Problem | What to check | Fix |
 | ------- | ------------- | --- |
 | **Docker build fails** | `docker compose logs` for the failing service | Ensure Docker Desktop is running. Re-run `docker compose up -d --build`. For Spring Boot, the Dockerfile runs Maven inside the image — no host `mvn` needed. |
-| **Missing `.env`** | FastAPI container starts but LLM uses fallback | Copy `.env.example` to `.env`. Rebuild: `docker compose up -d --build fastapi`. |
-| **OpenAI key missing** | UI shows **Rule-based fallback explanation**; `llmStatus: "fallback"` | Expected behavior. Add `OPENAI_API_KEY` to `.env` and restart FastAPI, or demo fallback intentionally with `LLM_FORCE_FALLBACK=true`. |
+| **Missing `.env` file** | `docker compose up` fails or FastAPI service does not start; error references missing `env_file` | Copy `.env.example` to `.env`, then run `docker compose up -d --build`. |
+| **`.env` present, OpenAI key empty** | UI shows **Rule-based fallback explanation**; `llmStatus: "fallback"` | Expected behavior. Add `OPENAI_API_KEY` to `.env` and restart FastAPI (`docker compose restart fastapi`), or demo fallback intentionally with `LLM_FORCE_FALLBACK=true`. |
+| **OpenAI key set but LLM fails** | UI shows **Rule-based fallback explanation**; `source: "fallback"` | Check `docker compose logs fastapi`. Decision is unchanged; only the explanation layer falls back. |
 | **Frontend cannot reach backend** | Browser console network error; UI shows `Failed to connect to backend` | Confirm `springboot` is running on port `8080`. Frontend calls `http://localhost:8080/api/evaluate` directly — both must be on the same host. |
 | **FastAPI unavailable** | Spring Boot logs: `FastAPI explanation service call failed` | Check `docker compose logs fastapi`. Decision still returns with `springboot-fallback`. Restart: `docker compose restart fastapi`. |
 | **Grafana shows no data** | Empty panels after import | Add Prometheus data source (`http://prometheus:9090`), run `./scripts/demo-traffic.sh`, confirm targets at http://localhost:9090/targets. |
 | **Prometheus target down** | Target `fastapi:8000` not UP | Ensure `fastapi` container is healthy: `curl http://localhost:8000/health`. |
 
-Quick reset before a live demo:
+Quick reset before a live demo (requires `.env` to exist):
 
 ```bash
 docker compose down
