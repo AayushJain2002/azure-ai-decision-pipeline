@@ -111,8 +111,8 @@ Use the frontend at http://localhost:3000 or the `curl` commands below.
 
 **Expected source**
 
-- With valid `OPENAI_API_KEY` in `.env`: `source: "llm"`, `llmStatus: "success"` → UI badge: **LLM-generated explanation**
-- With `.env` present but key empty, or on LLM failure: `source: "fallback"`, `llmStatus: "fallback"` → UI badge: **Rule-based fallback explanation**
+- With valid `OPENAI_API_KEY` in `.env`: `source: "llm"`, `llmStatus: "success"` → UI badge: **Explanation Source: LLM**
+- With `.env` present but key empty, or on LLM failure: `source: "fallback"`, `llmStatus: "fallback"` → UI badge: **Explanation Source: fallback** (or `springboot-fallback` / `partial-fallback` when applicable)
 
 **What it proves**
 
@@ -160,7 +160,7 @@ Expected: `decision: APPROVE`, `riskScore: 100`, `status: EVALUATED`, `nextStepC
 
 - `source`: `deterministic-hard-stop`
 - `llmStatus`: `fallback`
-- UI badge: **Rule-based fallback explanation**
+- UI badge: **Explanation Source: deterministic-hard-stop**
 
 **What it proves**
 
@@ -217,7 +217,8 @@ curl -s -X POST http://localhost:8080/api/evaluate \
 **What it proves**
 
 - Input validation runs in Spring Boot (`@Valid` on `Applicant`) before decision logic.
-- Invalid requests return structured field errors, not a crash.
+- Invalid requests for employment status, credit range, and income return structured field errors (HTTP 400).
+- The frontend also blocks empty fields client-side before calling the API.
 
 ---
 
@@ -288,6 +289,7 @@ Shows FastAPI request volume, errors, status distribution, and latency. Spring B
 - **Hardcoded FastAPI URL** — Spring Boot calls `http://fastapi:8000/analyze` internally; `AI_SERVICE_URL` in compose is reserved for future wiring.
 - **Simple decision model** — demo scoring rules, not a production credit model.
 - **Minimal frontend** — functional UI, not a polished product shell.
+- **Incomplete null checks on income/creditScore** — omitting these fields via direct API (not the UI) can return HTTP 500 instead of a field error; use the UI or the documented curl examples for validation demos.
 
 ---
 
@@ -297,8 +299,8 @@ Shows FastAPI request volume, errors, status distribution, and latency. Spring B
 | ------- | ------------- | --- |
 | **Docker build fails** | `docker compose logs` for the failing service | Ensure Docker Desktop is running. Re-run `docker compose up -d --build`. For Spring Boot, the Dockerfile runs Maven inside the image — no host `mvn` needed. |
 | **Missing `.env` file** | `docker compose up` fails or FastAPI service does not start; error references missing `env_file` | Copy `.env.example` to `.env`, then run `docker compose up -d --build`. |
-| **`.env` present, OpenAI key empty** | UI shows **Rule-based fallback explanation**; `llmStatus: "fallback"` | Expected behavior. Add `OPENAI_API_KEY` to `.env` and restart FastAPI (`docker compose restart fastapi`), or demo fallback intentionally with `LLM_FORCE_FALLBACK=true`. |
-| **OpenAI key set but LLM fails** | UI shows **Rule-based fallback explanation**; `source: "fallback"` | Check `docker compose logs fastapi`. Decision is unchanged; only the explanation layer falls back. |
+| **`.env` present, OpenAI key empty** | UI badge shows **Explanation Source: fallback**; `llmStatus: "fallback"` | Expected behavior. Add `OPENAI_API_KEY` to `.env` and restart FastAPI (`docker compose restart fastapi`), or demo fallback intentionally with `LLM_FORCE_FALLBACK=true`. |
+| **OpenAI key set but LLM fails** | UI badge shows **Explanation Source: fallback**; `source: "fallback"` | Check `docker compose logs fastapi`. Decision is unchanged; only the explanation layer falls back. |
 | **Frontend cannot reach backend** | Browser console network error; UI shows `Failed to connect to backend` | Confirm `springboot` is running on port `8080`. Frontend calls `http://localhost:8080/api/evaluate` directly — both must be on the same host. |
 | **FastAPI unavailable** | Spring Boot logs: `FastAPI explanation service call failed` | Check `docker compose logs fastapi`. Decision still returns with `springboot-fallback`. Restart: `docker compose restart fastapi`. |
 | **Grafana shows no data** | Empty panels after import | Add Prometheus data source (`http://prometheus:9090`), run `./scripts/demo-traffic.sh`, confirm targets at http://localhost:9090/targets. |
