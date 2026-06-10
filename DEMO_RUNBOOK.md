@@ -6,6 +6,36 @@ This is an AI-assisted decision support system where Spring Boot makes determini
 
 ---
 
+## AI Pipeline (Multi-Step)
+
+The LLM is a **post-decision explanation layer**, not the decision authority.
+
+```text
+Applicant input
+  → DecisionEngine.evaluate()     [Spring Boot — deterministic APPROVE/REVIEW/REJECT]
+  → DecisionContext artifact      [decision, reasonCodes, ruleFactors, nextStepCategory]
+  → [if status != HARD_STOP] POST /analyze
+       → Step 1: explanation LLM call + JSON validation
+       → Step 2: recommendations LLM call + JSON validation
+  → EligibilityResponse           [decision from engine; explanation/recommendations from AI or fallback]
+```
+
+**Boundary rules (enforced in code, not prompt-only):**
+
+| Layer | Responsibility |
+| ----- | -------------- |
+| `DecisionEngine.java` | All approval/review/reject outcomes; hard-stop rules bypass the LLM entirely |
+| `llm.py` — `generate_explanation_text` | Explains the already-made decision; must not recommend next steps |
+| `llm.py` — `generate_recommendations` | Suggests exactly 3 next steps; must not re-explain or change the decision |
+| `FORBIDDEN_RESPONSE_KEYS` | Rejects LLM JSON that echoes decision fields (`decision`, `score`, `reasonCodes`, etc.) |
+| Fallback chain | OpenAI failure, invalid JSON, or forbidden fields → rule-based text; FastAPI down → Spring Boot fallback |
+
+**Transparency fields for demos:** `source` (`llm`, `partial-fallback`, `fallback`, `springboot-fallback`, `deterministic-hard-stop`) and `llmStatus` (`success` or `fallback`).
+
+**Key files:** `DecisionEngine.java`, `EligibilityService.java`, `services/ai-service/llm.py`, `services/ai-service/main.py`.
+
+---
+
 ## Local Setup
 
 ### 1. Environment file
